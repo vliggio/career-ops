@@ -59,6 +59,13 @@ interview-prep/sessions/*
 writing-samples/*
 !writing-samples/README.md
 
+# Locally symlinked out to /Users/vince/git/job-data — never track the symlinks
+/data
+/jds
+/output
+/reports
+/interview-prep
+
 # User config and customization (never auto-updated)
 config/profile.yml
 config/cv-facts.json
