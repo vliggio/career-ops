@@ -114,25 +114,6 @@ reports/*-RESERVED.md
 # OpenRouter runner — generated data (personal, never commit)
 data/model-blacklist.json
 
-# intake mode working state (personal, never commit)
-data/intake-state.json
-
-# Proof points extracted from the user's portfolio (user layer, per DATA_CONTRACT)
-article-digest.md
-
-# Timestamped backups written by the updater / normalize-statuses / dedup-tracker.
-# The bare *.bak rule above misses these because the timestamp is the last segment.
-*.bak-*
-*.bak[0-9]*
-
-# Interrupted test runs leave these stageable
-.tmp-script-test-*/
-
-# documents/ is user layer — ship only the system-owned scaffold
-documents/*
-!documents/.gitkeep
-!documents/README.md
-
 # OS
 .DS_Store
 *.mov
