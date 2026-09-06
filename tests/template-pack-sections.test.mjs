@@ -22,7 +22,7 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import { pass, fail, run, NODE, ROOT, lastRunFailure } from './helpers.mjs';
 import {
-  PARTIAL_SECTIONS, declaredSections, checkDeclaredSections, listTemplates, resolveTemplate,
+  PARTIAL_SECTIONS, parseMeta, declaredSections, checkDeclaredSections, listTemplates, resolveTemplate,
 } from '../cv-templates.mjs';
 
 console.log('\nCV template packs — declared sections and completeness (#3852)');
@@ -127,6 +127,51 @@ function build(dir, template) {
     /unknown section/, /references/, /competencies/
   );
   throws('an empty declaration is an error', () => declaredSections({ sections: ' , ' }), /empty/);
+  throws('a blank string declaration is an error', () => declaredSections({ sections: '' }), /empty/);
+}
+
+// ── A bare `sections:` reaches the empty-declaration error ──────────────────
+//
+// parseMeta records a key written with a blank value as '' rather than
+// dropping the line. It matched `(.+?)` once, so `sections:` parsed as no key
+// at all, declaredSections returned null, and the template fell silently back
+// to the built-in builders — the exact silence this key exists to remove, and
+// reachable by the most natural way to write an empty declaration.
+
+{
+  const { dir, template } = fixture({ manifest: 'sections:', sections: { experience: VALID_ENTRY } });
+
+  const meta = parseMeta(template);
+  if (meta.sections === '') pass('parseMeta records a bare `sections:` as an empty value, not an absent key');
+  else fail(`parseMeta read sections as ${JSON.stringify(meta.sections)} — a typed key must not vanish`);
+
+  throws('a bare `sections:` is an empty declaration, not a silent fallback', () => declaredSections(meta), /empty/);
+  throws(
+    'and it fails at resolve, naming the pack',
+    () => resolveTemplate('cv', 'mine', { dir }),
+    /mine[/\\]cv-template\.mine\.html/, /empty/
+  );
+
+  const r = build(dir, template);
+  if (r.status !== 0 && /empty/.test(r.stderr)) {
+    pass('and it fails the render rather than falling back to the built-in builders');
+  } else {
+    fail(`bare "sections:" rendered: exit ${r.status}, ${(r.stderr || '').trim()}`);
+  }
+}
+
+{
+  // The regex is shared by every manifest key, so the widening must not change
+  // what a blank `name:` means: displayName reads it through `meta.name || …`,
+  // and an empty value still falls back to the prettified filename.
+  const { dir, template } = fixture({ manifest: 'name:\nsections: experience', sections: { experience: VALID_ENTRY } });
+  if (parseMeta(template).name === '') {
+    const entry = listTemplates('cv', { dir }).find((t) => t.name === 'mine');
+    if (entry?.displayName === 'Mine') pass('a blank `name:` still falls back to the prettified filename');
+    else fail(`blank name: produced displayName ${JSON.stringify(entry?.displayName)}`);
+  } else {
+    fail('blank `name:` was dropped by parseMeta — the widening is not applied uniformly');
+  }
 }
 
 // ── Resolution: a declared section must exist ───────────────────────────────
