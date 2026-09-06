@@ -37,7 +37,7 @@ import {
   existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join, relative, sep } from 'node:path';
+import { basename, dirname, join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { walkTree, listTree, isNestedCheckout } from '../lib/walk-tree.mjs';
 import { collectMjsFiles } from '../lib/mjs-files.mjs';
@@ -238,8 +238,14 @@ test('a checkout under tests/ does not get its suites EXECUTED by the runner', (
   // for them. The marker is what the predicate keys on, so a plain file named
   // `.git` reproduces it exactly as `git worktree add tests/x` does, without
   // needing git.
-  const fixture = join(ROOT, 'tests', 'nested-checkout-fixture-3762');
-  rmSync(fixture, { recursive: true, force: true });
+  //
+  // mkdtemp rather than a fixed path: the fixture has to live under the real
+  // tests/ for the real discovery to walk it, and the previous form cleared its
+  // path with a recursive rm BEFORE creating it — which is a delete of whatever
+  // a developer happened to have there. The generated basename is what `--only`
+  // filters on, so the discovery contract is unchanged.
+  const fixture = mkdtempSync(join(ROOT, 'tests', 'nested-checkout-3762-'));
+  const only = basename(fixture);
   try {
     mkdirSync(join(fixture, 'tests'), { recursive: true });
     writeFileSync(join(fixture, '.git'), 'gitdir: /nowhere\n');
@@ -255,7 +261,7 @@ test('a checkout under tests/ does not get its suites EXECUTED by the runner', (
     let status = 0;
     let output = '';
     try {
-      output = execFileSync(process.execPath, ['test-all.mjs', '--only', 'nested-checkout-fixture-3762'], {
+      output = execFileSync(process.execPath, ['test-all.mjs', '--only', only], {
         cwd: ROOT, encoding: 'utf-8', timeout: 120000,
       });
     } catch (err) {
@@ -282,10 +288,11 @@ test('a checkout parked among the fixture states is not an allowlisted state', (
   // and seedFixture would copy a whole second repository into the install
   // under test, hashing every file of it into the manifest (#3762).
   const FIXTURES = join(ROOT, 'test-fixtures', 'upgrade');
-  const probe = join(FIXTURES, 'state-nested-checkout-probe');
-  rmSync(probe, { recursive: true, force: true });
+  // mkdtemp for the same reason as the test above — and the `state-` prefix
+  // keeps the probe shaped like the thing it is pretending to be.
+  const probe = mkdtempSync(join(FIXTURES, 'state-nested-checkout-probe-'));
+  const probeName = basename(probe);
   try {
-    mkdirSync(probe, { recursive: true });
     writeFileSync(join(probe, '.git'), 'gitdir: /nowhere\n');
     writeFileSync(join(probe, 'cv.md'), '# not ours\n');
 
@@ -297,7 +304,7 @@ test('a checkout parked among the fixture states is not an allowlisted state', (
     const states = JSON.parse(listed);
     assert.ok(states.length > 0, 'the probe must not empty the state list — that would pass for the wrong reason');
     assert.ok(
-      !states.includes('state-nested-checkout-probe'),
+      !states.includes(probeName),
       `listStates() offered a nested checkout as a fixture state: ${states.join(', ')}`,
     );
   } finally {
