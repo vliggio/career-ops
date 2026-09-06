@@ -21,6 +21,7 @@ import { readFileSync, readdirSync, mkdtempSync, mkdirSync, writeFileSync, rmSyn
 import { join, relative } from 'path';
 import { tmpdir } from 'os';
 import { execFileSync } from 'child_process';
+import { isNestedCheckout } from '../lib/mjs-files.mjs';
 import { pass, fail, NODE, ROOT } from './helpers.mjs';
 
 console.log('\nLocalized tracker-addition templates (#3702)');
@@ -31,10 +32,21 @@ const ALIASES = JSON.parse(readFileSync(join(ROOT, 'tracker-aliases.json'), 'utf
 // The files #3702 catalogued as showing a concrete row. A tripwire, not the
 // input: discovery below runs over all of modes/, and this set only asserts it
 // never silently narrows again.
+//
+// `modes/ru/oferta.md` was the fifth and is deliberately NOT here any more.
+// Removing an entry from a narrowing tripwire is the exact move it exists to
+// prevent, so the reason is recorded rather than assumed: #3830 re-synced that
+// file to the canonical A–H structure, and the canonical structure — English
+// `modes/oferta.md` — dictates no TSV row at all. It lists the fields in prose
+// and defers the row shape to AGENTS.md and rule 9 of `_shared.md`. The
+// re-synced file no longer contains the string `batch/tracker-additions/`, so
+// it is not merely unrecognized, it is genuinely out of this suite's scope.
+// That is a better end state than #3702 asked for: one canonical spec instead
+// of a sixth copy that can drift. If a row template ever returns to that file,
+// discovery picks it up again and the full contract below applies to it.
 const KNOWN_TEMPLATE_FILES = [
   'modes/ko/gonggo.md',
   'modes/nl/vacature.md',
-  'modes/ru/oferta.md',
   'modes/tr/is-ilani.md',
   'modes/ua/oferta.md',
 ];
@@ -94,9 +106,15 @@ function fences(text) {
 function walk(dir) {
   const out = [];
   for (const e of readdirSync(dir, { withFileTypes: true })) {
-    const p = join(dir, e.name);
-    if (e.isDirectory()) out.push(...walk(p));
-    else if (e.name.endsWith('.md')) out.push(p);
+    const full = join(dir, e.name);
+    if (e.isDirectory()) {
+      // A checkout placed under modes/ is another tree's content, and its mode
+      // files are not this repository's to hold to this contract (#3681/#3762).
+      if (isNestedCheckout(full)) continue;
+      out.push(...walk(full));
+    } else if (e.name.endsWith('.md')) {
+      out.push(full);
+    }
   }
   return out;
 }
