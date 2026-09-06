@@ -242,6 +242,10 @@ if (isMainModule(import.meta.url)) {
     problems.push(`modes/_shared.md does not reference "${MARKER}"`);
   }
 
+  // globSync expands the whole subtree in one call, so a nested checkout is
+  // filtered out of the result rather than skipped during a descent: a worktree
+  // under modes/ turned 174 candidate files into 459, all of them somebody
+  // else's, and this validator would have graded them as ours (#3762).
   const candidates = [
     // listTree, not globSync: glob has no idea what a nested checkout is, so a
     // worktree parked under modes/ would put a second repository's mode files
