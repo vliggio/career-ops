@@ -150,9 +150,6 @@ plan/
 # Web — runtime cache/history the dashboard writes locally; nothing here is tracked.
 .career-ops-web/
 
-# Upgrade-test fixtures are fictional system-layer data, never user data
-# (see DATA_CONTRACT.md). Re-include them past the unanchored user-layer
-# patterns above (cv.md, portals.yml).
 # Added by career-ops update-system.mjs.
 # System-owned ignore rules that were missing from this file. Your own rules
 # are never modified, reordered or removed: the updater only appends patterns
@@ -201,14 +198,38 @@ follow-ups.md
 *.db-wal
 *.db-shm
 
-
-!test-fixtures/**
+# Single-level glob above misses subdirectories (e.g. reports/superseded/).
+# Kept alongside it rather than replacing it, so update-system.mjs does not
+# re-append the original pattern as "missing".
+reports/**/*.md
 
 # Profile intake sources (master CV / LinkedIn export / diplomas / references
 # — user PII, never commit). Ship only the system-owned scaffold. #1723
 documents/*
-!documents/.gitkeep
-!documents/README.md
 # Intake fingerprints — the recorded source filenames may themselves carry
 # PII (e.g. cv/jane-doe-master-cv.pdf). #1723
 data/intake-state.json
+
+# Negations last. Every re-include below must follow every ignore rule above:
+# documents/* directly above, and the unanchored user-layer patterns further up
+# (cv.md, portals.yml, applications.md, *.db). update-system.mjs appends new
+# rules to the END of this file, so if a future update adds an ignore pattern
+# below this block, move these negations back down past it.
+!reports/.gitkeep
+!output/.gitkeep
+!batch/logs/.gitkeep
+!batch/tracker-additions/.gitkeep
+!jds/.gitkeep
+!interview-prep/
+!interview-prep/.gitkeep
+!interview-prep/sessions/
+!interview-prep/sessions/.gitkeep
+!interview-prep/sessions/README.md
+!writing-samples/README.md
+!web/package-lock.json
+!documents/.gitkeep
+!documents/README.md
+# Upgrade-test fixtures are fictional system-layer data, never user data
+# (see DATA_CONTRACT.md). Re-include them past the unanchored user-layer
+# patterns above (cv.md, portals.yml).
+!test-fixtures/**
