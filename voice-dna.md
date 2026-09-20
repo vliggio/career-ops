@@ -1,1 +1,0 @@
-/Users/vince/git/job-data/voice-dna.md
