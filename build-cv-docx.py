@@ -8,8 +8,23 @@ Office Open XML directly. Deterministic, no third-party packages.
 
 Usage: python3 build-cv-docx.py <ats-payload.json> <out.docx>
 """
-import json, sys, zipfile
+import json, re, sys, zipfile
 from xml.sax.saxutils import escape
+
+# Payload text uses **...** for emphasis (build-cv-html.mjs / generate-pdf.mjs render it
+# as <strong>); emit real bold runs here so the markers never reach the .docx literally.
+BOLD_RE = re.compile(r"\*\*([^*]+)\*\*")
+
+def runs(text, rpr_inner=""):
+    out, pos = [], 0
+    for m in BOLD_RE.finditer(text):
+        out.append((text[pos:m.start()], rpr_inner))
+        out.append((m.group(1), rpr_inner + "<w:b/>" if "<w:b/>" not in rpr_inner else rpr_inner))
+        pos = m.end()
+    out.append((text[pos:], rpr_inner))
+    return "".join(
+        f'<w:r>{f"<w:rPr>{r}</w:rPr>" if r else ""}<w:t xml:space="preserve">{escape(t)}</w:t></w:r>'
+        for t, r in out if t)
 
 def p(text, style=None, bold=False, size=None):
     rpr = ""
@@ -17,14 +32,13 @@ def p(text, style=None, bold=False, size=None):
         rpr += "<w:b/>"
     if size:
         rpr += f'<w:sz w:val="{size}"/><w:szCs w:val="{size}"/>'
-    rpr = f"<w:rPr>{rpr}</w:rPr>" if rpr else ""
     ppr = f'<w:pPr><w:pStyle w:val="{style}"/></w:pPr>' if style else ""
-    return f'<w:p>{ppr}<w:r>{rpr}<w:t xml:space="preserve">{escape(text)}</w:t></w:r></w:p>'
+    return f'<w:p>{ppr}{runs(text, rpr)}</w:p>'
 
 def bullet(text):
     ppr = ('<w:pPr><w:pStyle w:val="ListParagraph"/>'
            '<w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr></w:pPr>')
-    return f'<w:p>{ppr}<w:r><w:t xml:space="preserve">{escape(text)}</w:t></w:r></w:p>'
+    return f'<w:p>{ppr}{runs(text)}</w:p>'
 
 def build(d):
     c = d["candidate"]
