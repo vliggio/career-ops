@@ -30,6 +30,8 @@
  *   node tracker.mjs export [--out FILE] [--force]  # inverse: applications.db → markdown (stdout by default)
  *                                               # --force: write even when columns would be dropped
  *   node tracker.mjs delete --num N [--dry-run] # remove one application row from applications.md + reindex
+ *                                               # the tracker is backed up to applications.md.bak first;
+ *                                               # any other flag or argument is an error, nothing is deleted
  *
  * query/history auto-resync when applications.md changed since the last sync,
  * so the index can never serve stale reads.
@@ -922,10 +924,50 @@ async function exportMd(args, ctx) {
 // the derived index. The markdown stays the source of truth: callers (incl. the
 // web) orchestrate this script rather than editing applications.md directly.
 // The read and atomic replacement share merge-tracker's cross-process lock.
+const DELETE_USAGE = 'Usage: node tracker.mjs delete --num <N> [--dry-run]   (remove one application row by its number)';
+
+/**
+ * Every `delete` argument that is not `--num <N>`, `--num=<N>` or `--dry-run`.
+ *
+ * The preview is chosen by an exact `--dry-run`, so a near miss (`--dryrun`,
+ * `--dry_run`, `-n`, `--dry-run=true`) used to fall through to the real delete.
+ * A typo on the one command that removes a row must stop it instead.
+ * lib/cli-flags.mjs's validateFlags() is the same rule but exits the process,
+ * which runTracker()'s in-process callers cannot survive, so the check is
+ * stated here and reported through TrackerExit.
+ *
+ * `--num`'s value follows flagValue()'s adjacency rule: the next token, unless
+ * it is itself a `--flag`.
+ *
+ * @param {string[]} args - The command's arguments.
+ * @returns {string[]} The arguments `delete` does not accept, in order.
+ */
+function unknownDeleteArgs(args) {
+  const unknown = [];
+  for (let i = 0; i < args.length; i++) {
+    const arg = String(args[i]);
+    if (arg === '--dry-run' || arg.startsWith('--num=')) continue;
+    if (arg === '--num') {
+      if (args[i + 1] !== undefined && !String(args[i + 1]).startsWith('--')) i++;
+      continue;
+    }
+    unknown.push(arg);
+  }
+  return unknown;
+}
+
 async function deleteApp(args, ctx) {
+  // Before anything else, the usage check included: `delete --dryrun` must say
+  // what is wrong with it, and must not reach a path that writes.
+  const unknown = unknownDeleteArgs(args);
+  if (unknown.length) {
+    ctx.error(`Error: unrecognized flag(s) or argument(s): ${unknown.join(', ')}. Valid flags: --num, --dry-run. Nothing was deleted.`);
+    ctx.error(DELETE_USAGE);
+    throw new TrackerExit(1);
+  }
   const num = flagValue(args, '--num');
   if (!num) {
-    ctx.error('Usage: node tracker.mjs delete --num <N> [--dry-run]   (remove one application row by its number)');
+    ctx.error(DELETE_USAGE);
     throw new TrackerExit(1);
   }
   if (!existsSync(ctx.mdPath)) {
@@ -946,12 +988,21 @@ async function deleteApp(args, ctx) {
   const trackerTransaction = await openTrackerTransaction(ctx.mdPath);
 
   let removal;
+  // Beside the transaction's canonical path, not ctx.mdPath: a tracker reached
+  // through a symlink keeps its backup next to the real file.
+  const backupPath = `${trackerTransaction.path}.bak`;
   try {
-    removal = removeRowByNum(trackerTransaction.read(), num);
+    const before = trackerTransaction.read();
+    removal = removeRowByNum(before, num);
     if (!removal.removed) {
       ctx.error(`No application numbered ${num} in ${ctx.mdPath}.`);
       return 1;
     }
+    // Backup first, from the bytes read inside the lock, like every other
+    // tracker writer. A delete takes the row's status, report link and notes
+    // with it, and nothing else on disk holds them. If the backup cannot be
+    // written this throws and the row is not removed.
+    writeFileAtomic(backupPath, before);
     trackerTransaction.replace(removal.newContent);
   } finally {
     trackerTransaction.close();
@@ -972,6 +1023,7 @@ async function deleteApp(args, ctx) {
     ctx.error(`(row removed; index resync skipped: ${e.message})`);
   }
   ctx.error(`Removed application ${num} (${removedCount} row${removedCount > 1 ? 's' : ''}) from ${ctx.mdPath} and reindexed.`);
+  ctx.error(`Tracker as it was before the delete: ${backupPath}`);
   if (report) ctx.error(`Note: report file may now be orphaned — ${report}`);
 }
 

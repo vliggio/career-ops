@@ -924,11 +924,15 @@ node tracker.mjs history --id 42          # status transitions observed across s
 node tracker.mjs export                   # inverse: index → markdown table on stdout
 node tracker.mjs export --out repaired.md # write to a file (existing file backed up to .bak first)
 node tracker.mjs export --out repaired.md --force  # write even when columns would be dropped
+node tracker.mjs delete --num 42 --dry-run # preview: which row would go, and the report it would orphan
+node tracker.mjs delete --num 42          # remove row 42 from applications.md (backed up to .bak first) + reindex
 ```
 
 `query` and `history` auto-resync when the markdown changed since the last sync, so the index can never serve stale reads.
 
 `sync` detects and reports the corruption classes markdown accumulates — mojibake placeholder cells, scores stranded in the status column, non-canonical statuses (resolved via `templates/states.yml` aliases), missing/malformed/duplicate ids, stray pipes — and normalizes them **in the index only**; the markdown is never modified. Fix at the source with `normalize-statuses.mjs` / `dedup-tracker.mjs`, then re-sync. Status changes between syncs accumulate in a `status_events` table, which gives `analyze-patterns.mjs` a real funnel instead of only the current snapshot.
+
+`delete` is the one command here that writes `applications.md`: it removes the row numbered `--num` under the same lock as `merge-tracker.mjs`, after copying the tracker to `applications.md.bak`, and then rebuilds the index. It accepts `--num` and `--dry-run` only. Any other flag or argument (`--dryrun`, `-n`, `--dry-run=true`) exits `1` with nothing deleted, so a mistyped preview cannot turn into a real delete. The row's report file is left on disk and named in the output.
 
 `export` is the inverse of `sync`. It writes to stdout by default and never touches `applications.md` unless you explicitly pass it as `--out`. Phase 2 of #918 (DB becomes source of truth, markdown becomes a rendered view) is a separate, explicit per-user opt-in — not part of this script yet.
 
