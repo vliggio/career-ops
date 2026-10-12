@@ -422,4 +422,4 @@ Do not auto-generate the cover letter PDF without going through the interactive 
 
 ## Post-generation
 
-Update tracker if the job is already registered: change PDF from ❌ to ✅.
+If the job is already in the tracker, flip its PDF cell from ❌ to ✅ with `node mark-pdf-ready.mjs {report number}` (the same report number passed to `--report` above). Do not edit `data/applications.md` by hand.
