@@ -285,6 +285,8 @@ npm run pdf -- input.html output.pdf --allow-nonchronological   # keep a deliber
 
 Generation fails when the Work Experience entries are not newest-first, and the error quotes the dates of the role that starts later than the one above it. Put the roles back in reverse-chronological order and rerun: tailor a CV through the summary, competencies, and bullet selection, not by moving roles. If the candidate wants a different order, pass `--allow-nonchronological` to turn the failure into a warning. With `--batch`, only the out-of-order CV fails and the rest still render.
 
+Generation also fails when the CV states a metric or fact that `cv.md` and `article-digest.md` do not back (the same gate as `verify-cv-facts.mjs`); it runs whenever the workspace has a `cv.md`. Pass `--skip-fact-check` to render anyway. With `--batch`, every manifest entry goes through the gate: a blocked entry is recorded as failed in `<manifest>.results.json` and the rest still render.
+
 **Exit codes:** `0` PDF generated, `1` missing arguments or generation failure.
 
 ---
