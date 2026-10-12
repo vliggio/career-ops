@@ -12,13 +12,14 @@
  */
 
 import { readFileSync, copyFileSync, existsSync, mkdirSync } from 'fs';
-import { dirname } from 'path';
+import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import { getCareerOpsRoot, resolveTrackerPath } from './path-resolver.mjs';
 import { roleFuzzyMatch } from './role-matcher.mjs';
 import { normalizeUrl } from './url-key.mjs';
 import {
   openTrackerTransaction, rebuildRow, normalizeCompany,
+  loadCanonicalStates, resolveCanonicalStateId,
 } from './tracker-utils.mjs';
 import { resolveColumns, parseTrackerRow, normalizeVia, extractReqNumber } from './tracker-parse.mjs';
 import { validateFlags } from './lib/cli-flags.mjs';
@@ -45,75 +46,45 @@ const DRY_RUN = process.argv.includes('--dry-run');
 // Ensure the target tracker directory exists in both normal and fixture mode.
 mkdirSync(dirname(APPS_FILE), { recursive: true });
 
-// Status advancement order (higher = more advanced in pipeline)
-// Aplicado > Rechazado because active application > terminal state
+// Status advancement order (higher = more advanced in pipeline), keyed by the
+// canonical state id. Rejected sits below every active state because an active
+// application outranks a terminal one. Hired outranks everything: the
+// accepted-job record must never lose a dedup contest to a repost row.
+//
+// Ids only — every alias (Spanish, Turkish, legacy) resolves to its id through
+// templates/states.yml, so a new alias there is ranked here with no edit.
 const STATUS_RANK = {
-  // English canonicals (states.yml labels)
-  'skip': 0,
-  'discarded': 0,
-  'rejected': 1,
-  'evaluated': 2,
-  'applied': 3,
-  'responded': 4,
-  'assessment': 5,
-  'interview': 6,
-  'offer': 7,
-  // Hired outranks everything: the accepted-job record must never lose a
-  // dedup contest to a repost row (aliases from templates/states.yml).
-  'hired': 8,
-  'accepted': 8,
-  'accept': 8,
-  // Assessment aliases from templates/states.yml.
-  'screening': 5,
-  'online assessment': 5,
-  'online_assessment': 5,
-  'online screening': 5,
-  // Spanish aliases — kept for backwards compat with existing tracker data
-  'no_aplicar': 0,
-  'no aplicar': 0,
-  'descartado': 0,
-  'descartada': 0,
-  'rechazado': 1,  // Terminal — below active states
-  'rechazada': 1,
-  'evaluada': 2,
-  'aplicado': 3,
-  'respondido': 4,
-  'entrevista': 6,
-  'oferta': 7,
-  'contratado': 8,
-  'contratada': 8,
+  skip: 0,
+  discarded: 0,
+  rejected: 1,
+  evaluated: 2,
+  applied: 3,
+  responded: 4,
+  assessment: 5,
+  interview: 6,
+  offer: 7,
+  hired: 8,
 };
 
-/**
- * Normalize tracker status text before ranking or comparing it.
- *
- * Existing trackers can contain bold Markdown wrappers or legacy dates appended
- * to the status cell. Dedup needs the canonical status word only, in lowercase,
- * so advanced-state protection works the same for old and new tracker rows.
- *
- * @param {string} status - Raw status cell from applications.md.
- * @returns {string} Lowercase status key with Markdown/date noise removed.
- */
-function normalizeStatus(status) {
-  return String(status ?? '')
-    .replace(/\*\*/g, '')
-    .replace(/\s+\d{4}-\d{2}-\d{2}.*$/, '')
-    .trim()
-    .toLowerCase();
-}
+// states.yml ships with the code, so it is read from the script's own
+// directory, never from the (overridable) data root.
+const CANONICAL_STATES = loadCanonicalStates(
+  join(dirname(fileURLToPath(import.meta.url)), 'templates', 'states.yml'));
 
 /**
  * Convert a tracker status into its pipeline-advancement rank.
  *
  * Higher ranks represent states that carry more user intent and should not be
- * casually overwritten or removed. Unknown statuses rank as 0 so malformed data
- * is treated conservatively rather than promoted.
+ * casually overwritten or removed. The cell is resolved through states.yml
+ * first (bold markers, a legacy trailing date and every alias handled there).
+ * Unknown statuses rank as 0 so malformed data is treated conservatively
+ * rather than promoted.
  *
- * @param {string} status - Raw or normalized status value.
+ * @param {string} status - Raw status value from the tracker row.
  * @returns {number} Numeric rank from STATUS_RANK, or 0 for unknown statuses.
  */
 function statusRank(status) {
-  return STATUS_RANK[normalizeStatus(status)] || 0;
+  return STATUS_RANK[resolveCanonicalStateId(status, CANONICAL_STATES)] || 0;
 }
 
 /**
