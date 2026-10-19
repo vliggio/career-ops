@@ -1,7 +1,6 @@
-import path from "node:path";
 import fs from "node:fs";
 import { pathToFileURL } from "node:url";
-import { careerOpsRoot } from "@/lib/career-ops";
+import { rootScript } from "@/lib/career-ops";
 
 /**
  * ACL for the core's follow-ups file lock (`followup-seed.mjs`).
@@ -47,12 +46,19 @@ type CoreWithFollowupsLock = (
  *  newly-installed checkout is picked up on the next request. */
 const modCache = new Map<string, CoreWithFollowupsLock>();
 
-/** Resolve the core export, or null when this root has data but no scripts.
- *  A data-only root cannot host the seeder either, so there is nothing to
- *  exclude cross-process and the in-process queue alone is correct — see
+/** Resolve the core export, or null when the code root has no seeder.
+ *
+ *  Resolved from the code root, the same checkout `rootScript` spawns the
+ *  seeder from, NOT from careerOpsRoot(). Under the #524 split layout the data
+ *  root holds no scripts, so looking there took the null branch on every
+ *  request and dropped the cross-process lock, while the seeder, spawned from
+ *  the code root against the same follow-ups file, still took it.
+ *
+ *  Null only when the code root itself has no seeder: then nothing this web
+ *  runtime spawns can race us, and the in-process queue alone is correct — see
  *  `withFollowupsLock` below. */
 async function loadCoreLock(): Promise<CoreWithFollowupsLock | null> {
-  const file = path.join(careerOpsRoot(), "followup-seed.mjs");
+  const file = rootScript("followup-seed");
   const cached = modCache.get(file);
   if (cached) return cached;
   if (!fs.existsSync(file)) return null;
@@ -76,9 +82,9 @@ export class FollowupsBusyError extends Error {
 /**
  * Run `fn` holding the core's follow-ups lock, releasing it on EVERY path.
  *
- * When the core scripts are absent (data-only root), runs `fn` with no file
- * lock: without the core there is no seeder to race, and `withLogLock` still
- * serializes this process. When the lock is contended past the web timeout,
+ * When the code root has no seeder (a web runtime without the core), runs `fn`
+ * with no file lock: without the core there is no seeder to race, and
+ * `withLogLock` still serializes this process. When the lock is contended past the web timeout,
  * throws `FollowupsBusyError` so the route can answer 409 rather than hang.
  *
  * @param followupsPath absolute path to data/follow-ups.md (the core resolves
