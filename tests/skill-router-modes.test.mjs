@@ -72,7 +72,9 @@ for (const mode of ['triage', 'calibrate', 'intake', 'ats', 'retro']) {
 // Every routed mode needs a context-loading rule too. A mode in none of the
 // three lists is loaded however the agent guesses: without `_custom.md` it
 // skips the user's house rules, which AGENTS.md says apply in every mode.
-const routedModes = [...skill.matchAll(/^\| `[^`]+` \| `([^`]+)` \|$/gm)].map((m) => m[1]);
+// Any input cell, so the JD row (plain-text input, bold `auto-pipeline`) is
+// covered; the discovery row has text after its mode and has no mode file.
+const routedModes = [...skill.matchAll(/^\| [^|\n]+ \| (?:\*\*)?`([^`]+)`(?:\*\*)? \|$/gm)].map((m) => m[1]);
 const withoutContextRule = [...new Set(routedModes)]
   .filter((m) => ![shared, standalone, ownContext].some((list) => list.includes(`\`${m}\``)));
 if (routedModes.length < 20) {
