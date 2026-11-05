@@ -2,7 +2,7 @@ name: Tests
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, test/docs-only-base]
   # The merge queue builds a temporary merge commit per group and needs the
   # same required checks to report on it; without this trigger every queued
   # PR would wait forever on `test (...)`.
